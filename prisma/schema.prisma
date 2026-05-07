@@ -1,0 +1,182 @@
+// JForce Engine — relational schema
+// `prisma db push` to provision; `prisma migrate dev` for branch-friendly migrations.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+}
+
+// ─── Auth (NextAuth Prisma adapter shape) ───────────────────────────────
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  role          Role      @default(EDITOR)
+  createdAt     DateTime  @default(now())
+
+  accounts      Account[]
+  sessions      Session[]
+  campaigns     Campaign[]   @relation("CampaignCreator")
+  knowledge     Knowledge[]  @relation("KnowledgeOwner")
+  auditEvents   AuditEvent[]
+}
+
+enum Role {
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── Domain models ──────────────────────────────────────────────────────
+model Market {
+  code         String   @id   // "NG", "KE", etc.
+  name         String
+  language     String         // "en" | "fr" | "ar" | "ar+fr"
+  ytUrl        String?
+  ytChannelId  String?
+  active       Boolean  @default(true)
+  updatedAt    DateTime @updatedAt
+}
+
+model Knowledge {
+  id        String   @id @default(cuid())
+  ownerId   String
+  name      String
+  type      String   // "image" | "pdf" | "doc" | "text"
+  mime      String?
+  size      Int
+  blobUrl   String   // Vercel Blob URL (signed, short-lived) or public URL
+  tags      String[] @default([])
+  createdAt DateTime @default(now())
+
+  owner     User              @relation("KnowledgeOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  campaigns CampaignKnowledge[]
+
+  @@index([ownerId])
+}
+
+model Campaign {
+  id           String   @id                       // human ID, e.g. "JFLG-001"
+  creatorId    String
+  name         String
+  contentType  String                              // "educational" | "product" | "brand" | "awareness"
+  brief        String   @db.Text
+  keyMessage   String   @db.Text
+  audience     String   @db.Text
+  cta          String
+  ramadanMode  Boolean  @default(false)
+  markets      String[]                            // codes
+  status       CampaignStatus @default(PENDING)
+  errorLog     String?  @db.Text
+
+  // Generated artifacts (filled in by webhook callbacks)
+  scriptsJson  Json?
+  videosJson   Json?
+  ytUrlsJson   Json?
+  publishedAt  DateTime?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  creator      User                @relation("CampaignCreator", fields: [creatorId], references: [id])
+  knowledge    CampaignKnowledge[]
+
+  @@index([creatorId])
+  @@index([status])
+}
+
+enum CampaignStatus {
+  PENDING
+  GENERATING
+  SCRIPTS_READY
+  RENDERING
+  VIDEOS_READY
+  PUBLISHING
+  PUBLISHED
+  PARTIAL
+  ERROR
+}
+
+model CampaignKnowledge {
+  campaignId  String
+  knowledgeId String
+  campaign    Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  knowledge   Knowledge @relation(fields: [knowledgeId], references: [id], onDelete: Cascade)
+
+  @@id([campaignId, knowledgeId])
+}
+
+model Settings {
+  id                String  @id @default("singleton")
+  toolUrl           String  @default("https://jforce-links.codewords.run")
+  defaultCta        String  @default("Open jforce-links.codewords.run")
+  hashtags          String  @default("#JumiaForce, #JForce, #JumiaAffiliate, #AffiliateMarketing")
+  // API credentials — encrypted at rest by Postgres pgcrypto in production.
+  // Stored here only as a convenience; prefer environment variables.
+  claudeKeyEnc      String?
+  heygenKeyEnc      String?
+  heygenAvatar      String?
+  voiceEn           String?
+  voiceFr           String?
+  voiceAr           String?
+  updatedAt         DateTime @updatedAt
+}
+
+// ─── Audit log (immutable, append-only) ─────────────────────────────────
+model AuditEvent {
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String   // "campaign.created", "campaign.pushed", "auth.login", ...
+  targetId   String?
+  meta       Json?
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}

@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html, body {
+  background: #050A18;
+  color: #E5EDF7;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@layer components {
+  .card {
+    @apply bg-card border border-line rounded-2xl;
+  }
+  .input {
+    @apply bg-[#0A1226] border border-line text-white rounded-lg px-3 py-2 outline-none w-full transition-colors focus:border-orange-100;
+  }
+  .textarea { @apply input; }
+  .select   { @apply input appearance-none cursor-pointer; }
+
+  .btn-primary {
+    @apply bg-orange text-white rounded-lg px-4 py-2 font-semibold transition-colors hover:bg-orange-100 disabled:bg-slate-600 disabled:cursor-not-allowed;
+  }
+  .btn-ghost {
+    @apply text-[#C5D0E0] rounded-lg px-3 py-2 border border-line transition-colors hover:bg-white/5 hover:border-white/15 disabled:opacity-50;
+  }
+  .btn-danger {
+    @apply text-bad bg-bad/10 border border-bad/25 rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors hover:bg-bad/20;
+  }
+
+  .pill {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wider;
+  }
+
+  .brand-grad { background: linear-gradient(135deg, #ED7100 0%, #FF8C29 100%); }
+  .navy-grad  { background: linear-gradient(135deg, #0A2342 0%, #14305C 100%); }
+}
