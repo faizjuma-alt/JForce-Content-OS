@@ -9,7 +9,7 @@ const ALLOWED = (process.env.ALLOWED_EMAILS || "")
   .filter(Boolean);
 
 const ResendEmailProvider: EmailConfig = {
-  id: "resend-email",
+  id: "nodemailer",
   type: "email",
   name: "Email (Resend)",
   from: process.env.EMAIL_FROM || "noreply@resend.dev",
