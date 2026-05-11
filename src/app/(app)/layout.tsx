@@ -13,26 +13,12 @@ export default async function AppShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <>
       <Nav email={session.user.email} signOutAction={signOutAction} />
-      <main className="max-w-7xl mx-auto w-full p-6 flex-1">{children}</main>
-      <footer className="border-t border-line bg-card/40 mt-10">
-        <div className="max-w-7xl mx-auto px-6 py-5 flex flex-col md:flex-row items-center justify-between gap-2 text-xs text-soft">
-          <div>
-            Built by{" "}
-            
-              href="https://www.youtube.com/@yankeesolutions"
-              target="_blank"
-              rel="noreferrer noopener"
-              className="text-orange-100 hover:underline font-semibold"
-            >
-              Yankee Solutions
-            </a>{" "}
-            · &copy; 2026
-          </div>
-          <div className="opacity-70">JForce Faceless Reels Engine · v1.0</div>
-        </div>
+      <main className="max-w-7xl mx-auto p-6 pb-24">{children}</main>
+      <footer className="border-t border-line mt-10 py-5 text-xs text-center text-soft">
+        Built by <a href="https://www.youtube.com/@yankeesolutions" target="_blank" rel="noreferrer noopener" className="text-orange-100 font-semibold hover:underline">Yankee Solutions</a> {"\u00B7 \u00A9 2026"}
       </footer>
-    </div>
+    </>
   );
 }
