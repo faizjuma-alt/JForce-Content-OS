@@ -4,14 +4,14 @@ const MARKET_CODES = ["NG", "KE", "UG", "GH", "IC", "SN", "EGY", "MA", "DZ"] as 
 
 export const CampaignSchema = z.object({
   id: z.string().regex(/^[A-Z]{2,5}-\d{1,6}$/, "ID must look like JFLG-001"),
-  name: z.string().min(3).max(120),
+  name: z.string().min(3).max(200),
   contentType: z.enum(["educational", "product", "brand", "awareness"]),
-  brief: z.string().min(10).max(4000),
-  keyMessage: z.string().min(5).max(500),
-  audience: z.string().min(5).max(500),
-  cta: z.string().min(3).max(200),
+  brief: z.string().min(10).max(8000),
+  keyMessage: z.string().min(5).max(4000),
+  audience: z.string().min(5).max(4000),
+  cta: z.string().min(3).max(500),
   ramadanMode: z.boolean().default(false),
-  markets: z.array(z.enum(MARKET_CODES)).min(1).max(9),
+  markets: z.array(z.enum(MARKET_CODES)).min(1, "Select at least one market").max(9),
   knowledgeIds: z.array(z.string()).default([]),
 });
 export type CampaignInput = z.infer<typeof CampaignSchema>;
@@ -24,15 +24,14 @@ export const MarketUpdateSchema = z.object({
 
 export const SettingsSchema = z.object({
   toolUrl: z.string().url(),
-  defaultCta: z.string().max(200),
-  hashtags: z.string().max(800),
+  defaultCta: z.string().max(500),
+  hashtags: z.string().max(2000),
   heygenAvatar: z.string().max(80).optional(),
   voiceEn: z.string().max(80).optional(),
   voiceFr: z.string().max(80).optional(),
   voiceAr: z.string().max(80).optional(),
 });
 
-// What the workflow sends back when a phase completes.
 export const WebhookCallbackSchema = z.object({
   campaignId: z.string(),
   phase: z.enum(["scripts_ready", "videos_ready", "published", "partial", "error"]),
