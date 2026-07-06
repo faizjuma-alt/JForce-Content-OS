@@ -5,6 +5,12 @@ export const dynamic = "force-dynamic";
 export default function LoginPage({ searchParams }: { searchParams: { ["check-email"]?: string; from?: string; error?: string } }) {
   const checkEmail = searchParams["check-email"] === "1";
   const error = searchParams.error;
+  const errorMsg =
+    error === "AccessDenied"
+      ? "That email isn\u2019t on the allowlist. Contact an admin."
+      : error === "Verification"
+      ? "That sign-in link expired or was already used. Request a new one."
+      : "Sign-in failed. Please try again.";
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4">
@@ -29,7 +35,7 @@ export default function LoginPage({ searchParams }: { searchParams: { ["check-em
         {error ? (
           <div className="rounded-lg border border-bad/30 bg-bad/10 p-4 mb-4 text-sm">
             <div className="font-bold text-bad mb-1">Sign-in failed</div>
-            That email isn't on the allowlist. Contact an admin.
+            {errorMsg}
           </div>
         ) : null}
 
