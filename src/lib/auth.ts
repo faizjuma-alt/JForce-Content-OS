@@ -42,7 +42,7 @@ const ResendEmailProvider: EmailConfig = {
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(db),
-  session: { strategy: "database" },
+  session: { strategy: "jwt" },
   pages: {
     signIn: "/login",
     verifyRequest: "/login?check-email=1",
@@ -64,10 +64,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (!ok) console.warn(`[auth] sign-in rejected for ${email} (not in allowlist)`);
       return ok;
     },
-    async session({ session, user }) {
+    async jwt({ token, user }) {
+      if (user) {
+        token.id = user.id;
+        token.role = (user as any).role || "EDITOR";
+      }
+      return token;
+    },
+    async session({ session, token }) {
       if (session.user) {
-        (session.user as any).id = user.id;
-        (session.user as any).role = (user as any).role || "EDITOR";
+        (session.user as any).id = token.id;
+        (session.user as any).role = token.role;
       }
       return session;
     },
