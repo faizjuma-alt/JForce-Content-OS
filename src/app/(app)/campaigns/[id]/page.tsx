@@ -3,6 +3,7 @@ import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { StatusPill } from "@/components/StatusPill";
+import { PublishPanel } from "@/components/PublishPanel";
 import { languagesFor } from "@/lib/routing";
 import { headers } from "next/headers";
 
@@ -132,6 +133,8 @@ export default async function CampaignDetail({ params }: { params: { id: string 
           </div>
         </details>
       ) : null}
+
+      <PublishPanel campaignId={c.id} defaultTitle={c.name} />
 
       {Object.values(ytUrls).filter(Boolean).length > 0 ? (
         <details className="card p-5 mb-4" open>
