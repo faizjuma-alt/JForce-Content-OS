@@ -32,6 +32,26 @@ export const SettingsSchema = z.object({
   voiceAr: z.string().max(80).optional(),
 });
 
+// Publish-only: push already-rendered videos (e.g. NotebookLM Video Overviews
+// staged in Drive) straight to the CodeWords /publish_only endpoint, skipping
+// the HeyGen generate+render pipeline. Video values may be a `drive://<id>`
+// reference or any https URL the workflow can fetch.
+export const PublishRequestSchema = z.object({
+  videos: z
+    .record(z.string().min(1))
+    .refine((v) => Object.keys(v).length > 0, "Provide at least one video URL"),
+  privacyStatus: z.enum(["public", "unlisted", "private"]).default("unlisted"),
+  metadata: z
+    .record(
+      z.object({
+        title: z.string().min(1).max(200),
+        description: z.string().max(5000).default(""),
+      }),
+    )
+    .optional(),
+});
+export type PublishRequest = z.infer<typeof PublishRequestSchema>;
+
 export const WebhookCallbackSchema = z.object({
   campaignId: z.string(),
   phase: z.enum(["scripts_ready", "videos_ready", "published", "partial", "error"]),
