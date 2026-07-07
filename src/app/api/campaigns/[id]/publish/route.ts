@@ -32,8 +32,15 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
   }
   const { videos, privacyStatus, metadata } = parsed.data;
 
-  const endpoint = process.env.CODEWORDS_PUBLISH_URL || "";
-  const apiKey = process.env.CODEWORDS_API_KEY || "";
+  // Sanitize env values: strip surrounding quotes, whitespace, and a stray
+  // leading HTTP-method token (e.g. a value pasted as "POST https://...").
+  const clean = (v: string) =>
+    v.trim().replace(/^['"]|['"]$/g, "").replace(/^(?:GET|POST|PUT|PATCH|DELETE)\s+/i, "").trim();
+  const endpoint = clean(
+    process.env.CODEWORDS_PUBLISH_URL ||
+      "https://runtime.codewords.ai/run/jforce_content_pipeline_09bce64d/publish_only",
+  );
+  const apiKey = clean(process.env.CODEWORDS_API_KEY || "");
   if (!endpoint) {
     return new NextResponse(
       "CODEWORDS_PUBLISH_URL is not configured. Set it in your environment.",
