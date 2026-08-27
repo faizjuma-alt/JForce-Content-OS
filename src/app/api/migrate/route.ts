@@ -1,26 +1,15 @@
 /**
  * One-shot Supabase → Neon data migration endpoint.
  *
- * WHAT IT DOES
- *   POST/GET /api/migrate
- *     1. Opens a second Prisma client pointed at the OLD Supabase DB.
- *     2. Reads every domain table from Supabase.
- *     3. Upserts rows into Neon (the current DATABASE_URL).
- *     4. Reports before/after counts.
+ * Opens a second Prisma client pointed at Supabase, reads every domain
+ * table, upserts rows into Neon (the current DATABASE_URL), reports
+ * before/after counts.
  *
- * SECURITY
- *   None — DELETE this file from the repo the instant you see the migration
- *   summary. The Supabase URL is embedded in this file, meaning anyone who
- *   fetches this route while it exists could theoretically trigger a re-read
- *   of your old DB (though they can't extract data, they can just re-copy it).
- *
- * WHY BOTH URLS ARE HARDCODED
- *   Vercel env vars would require another deployment cycle to become visible.
- *   Since this file is deleted right after use, hardcoding is safe and faster.
- *   Rotate the Supabase password once you've deleted the file.
+ * DELETE this file the instant the migration reports ok:true.
+ * The Supabase URL/password is embedded — rotate the password after.
  */
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
 import { db as neon } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -28,7 +17,6 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const maxDuration = 60;
 
-// URL-encoded to protect $ and @ in the password.
 const SUPABASE_URL =
   "postgresql://postgres:%24Afyr%40KR2GwK5-3@db.xovelufcihglhqsfyyhi.supabase.co:5432/postgres";
 
@@ -37,10 +25,12 @@ const supabase = new PrismaClient({
   log: ["error"],
 });
 
+// Prisma needs `Prisma.DbNull` (not JS null) for nullable JSON fields on writes.
+const j = (v: any) => (v === null || v === undefined ? Prisma.DbNull : v);
+
 async function run() {
   const summary: Record<string, any> = { source: "supabase", target: "neon" };
 
-  // 1. Connectivity
   try {
     await supabase.$queryRaw`SELECT 1`;
     await neon.$queryRaw`SELECT 1`;
@@ -49,7 +39,6 @@ async function run() {
     return NextResponse.json({ ok: false, step: "connectivity", error: e?.message }, { status: 500 });
   }
 
-  // 2. Source inventory (row counts, so we know what's coming)
   const srcCounts: Record<string, number> = {};
   try {
     srcCounts.User = await supabase.user.count();
@@ -67,14 +56,16 @@ async function run() {
   const migrated: Record<string, number> = {};
   const errors: Record<string, string[]> = {};
 
-  // 3. Users first (everything else FKs to User.id)
-  migrated.User = 0;
-  errors.User = [];
+  // Users
+  migrated.User = 0; errors.User = [];
   for (const u of await supabase.user.findMany()) {
     try {
       await neon.user.upsert({
         where: { email: u.email },
-        create: u,
+        create: {
+          id: u.id, email: u.email, name: u.name, image: u.image,
+          role: u.role, emailVerified: u.emailVerified, createdAt: u.createdAt,
+        },
         update: {
           name: u.name ?? undefined,
           role: u.role,
@@ -83,94 +74,88 @@ async function run() {
         },
       });
       migrated.User++;
-    } catch (e: any) {
-      errors.User.push(`${u.email}: ${e?.message}`);
-    }
+    } catch (e: any) { errors.User.push(`${u.email}: ${e?.message}`); }
   }
 
-  // 4. Markets (upsert by code — the setup route already seeded 9)
-  migrated.Market = 0;
-  errors.Market = [];
+  // Markets
+  migrated.Market = 0; errors.Market = [];
   for (const m of await supabase.market.findMany()) {
     try {
       await neon.market.upsert({
         where: { code: m.code },
         create: m,
         update: {
-          name: m.name,
-          language: m.language,
-          ytUrl: m.ytUrl ?? undefined,
-          ytChannelId: m.ytChannelId ?? undefined,
+          name: m.name, language: m.language,
+          ytUrl: m.ytUrl ?? undefined, ytChannelId: m.ytChannelId ?? undefined,
           active: m.active,
         },
       });
       migrated.Market++;
-    } catch (e: any) {
-      errors.Market.push(`${m.code}: ${e?.message}`);
-    }
+    } catch (e: any) { errors.Market.push(`${m.code}: ${e?.message}`); }
   }
 
-  // 5. Settings singleton
-  migrated.Settings = 0;
-  errors.Settings = [];
+  // Settings
+  migrated.Settings = 0; errors.Settings = [];
   for (const s of await supabase.settings.findMany()) {
     try {
       await neon.settings.upsert({
         where: { id: s.id },
         create: s,
         update: {
-          toolUrl: s.toolUrl,
-          defaultCta: s.defaultCta,
-          hashtags: s.hashtags,
+          toolUrl: s.toolUrl, defaultCta: s.defaultCta, hashtags: s.hashtags,
           claudeKeyEnc: s.claudeKeyEnc ?? undefined,
           heygenKeyEnc: s.heygenKeyEnc ?? undefined,
           heygenAvatar: s.heygenAvatar ?? undefined,
-          voiceEn: s.voiceEn ?? undefined,
-          voiceFr: s.voiceFr ?? undefined,
-          voiceAr: s.voiceAr ?? undefined,
+          voiceEn: s.voiceEn ?? undefined, voiceFr: s.voiceFr ?? undefined, voiceAr: s.voiceAr ?? undefined,
         },
       });
       migrated.Settings++;
-    } catch (e: any) {
-      errors.Settings.push(`${s.id}: ${e?.message}`);
-    }
+    } catch (e: any) { errors.Settings.push(`${s.id}: ${e?.message}`); }
   }
 
-  // 6. Knowledge (FKs to User)
-  migrated.Knowledge = 0;
-  errors.Knowledge = [];
+  // Knowledge
+  migrated.Knowledge = 0; errors.Knowledge = [];
   for (const k of await supabase.knowledge.findMany()) {
     try {
       await neon.knowledge.upsert({
         where: { id: k.id },
         create: k,
-        update: k,
+        update: {
+          name: k.name, type: k.type, mime: k.mime ?? undefined,
+          size: k.size, blobUrl: k.blobUrl, tags: k.tags,
+        },
       });
       migrated.Knowledge++;
-    } catch (e: any) {
-      errors.Knowledge.push(`${k.id}: ${e?.message}`);
-    }
+    } catch (e: any) { errors.Knowledge.push(`${k.id}: ${e?.message}`); }
   }
 
-  // 7. Campaigns (FKs to User)
-  migrated.Campaign = 0;
-  errors.Campaign = [];
+  // Campaigns — needs JSON null normalization
+  migrated.Campaign = 0; errors.Campaign = [];
   for (const c of await supabase.campaign.findMany()) {
     try {
+      const data: any = {
+        id: c.id, creatorId: c.creatorId, name: c.name,
+        contentType: c.contentType, brief: c.brief, keyMessage: c.keyMessage,
+        audience: c.audience, cta: c.cta, ramadanMode: c.ramadanMode,
+        markets: c.markets, status: c.status,
+        errorLog: c.errorLog ?? undefined,
+        scriptsJson: j(c.scriptsJson),
+        videosJson: j(c.videosJson),
+        ytUrlsJson: j(c.ytUrlsJson),
+        publishedAt: c.publishedAt ?? undefined,
+        createdAt: c.createdAt, updatedAt: c.updatedAt,
+      };
       await neon.campaign.upsert({
         where: { id: c.id },
-        create: c,
-        update: c,
+        create: data,
+        update: data,
       });
       migrated.Campaign++;
-    } catch (e: any) {
-      errors.Campaign.push(`${c.id}: ${e?.message}`);
-    }
+    } catch (e: any) { errors.Campaign.push(`${c.id}: ${e?.message}`); }
   }
 
-  // 8. Campaign-Knowledge join
-  migrated.CampaignKnowledge = 0;
-  errors.CampaignKnowledge = [];
+  // CampaignKnowledge
+  migrated.CampaignKnowledge = 0; errors.CampaignKnowledge = [];
   for (const ck of await supabase.campaignKnowledge.findMany()) {
     try {
       await neon.campaignKnowledge.upsert({
@@ -179,28 +164,29 @@ async function run() {
         update: {},
       });
       migrated.CampaignKnowledge++;
-    } catch (e: any) {
-      errors.CampaignKnowledge.push(`${ck.campaignId}/${ck.knowledgeId}: ${e?.message}`);
-    }
+    } catch (e: any) { errors.CampaignKnowledge.push(`${ck.campaignId}/${ck.knowledgeId}: ${e?.message}`); }
   }
 
-  // 9. Audit log (FK to User is optional; SetNull on delete)
-  migrated.AuditEvent = 0;
-  errors.AuditEvent = [];
+  // AuditEvent — meta is JSON, may be null
+  migrated.AuditEvent = 0; errors.AuditEvent = [];
   for (const a of await supabase.auditEvent.findMany({ orderBy: { createdAt: "asc" } })) {
     try {
+      const data: any = {
+        id: a.id, userId: a.userId ?? undefined, action: a.action,
+        targetId: a.targetId ?? undefined,
+        meta: j(a.meta),
+        ip: a.ip ?? undefined, userAgent: a.userAgent ?? undefined,
+        createdAt: a.createdAt,
+      };
       await neon.auditEvent.upsert({
         where: { id: a.id },
-        create: a,
+        create: data,
         update: {},
       });
       migrated.AuditEvent++;
-    } catch (e: any) {
-      errors.AuditEvent.push(`${a.id}: ${e?.message}`);
-    }
+    } catch (e: any) { errors.AuditEvent.push(`${a.id}: ${e?.message}`); }
   }
 
-  // 10. Post-migration counts
   const dstCounts: Record<string, number> = {
     User: await neon.user.count(),
     Market: await neon.market.count(),
@@ -220,10 +206,10 @@ async function run() {
   await supabase.$disconnect();
 
   summary.next_steps = [
-    "Reload https://j-force-content-os.vercel.app/ — your campaigns should be back.",
+    "Reload https://j-force-content-os.vercel.app/ — campaigns/knowledge/audit history should be back.",
     "DELETE this file (src/app/api/migrate/route.ts) from the repo NOW.",
     "Rotate the Supabase DB password (Supabase → Settings → Database → Reset password).",
-    "Pause or delete the Supabase project — you're off it entirely.",
+    "Pause the Supabase project — Neon is your source of truth now.",
   ];
 
   return NextResponse.json({ ok: true, ...summary });
