@@ -1,94 +1,99 @@
-import NextAuth from "next-auth";
-import { PrismaAdapter } from "@auth/prisma-adapter";
+/**
+ * SOLO-USER STUB — replaces Auth.js entirely.
+ *
+ * WHY: Auth.js v5-beta.25 was crashing at config init because of an invalid
+ * custom "email" provider (empty `server: {}`). Every file that imported
+ * `@/lib/auth` crashed on load, producing the /login digest 627796092.
+ *
+ * WHAT THIS DOES: exports the same names the rest of the app imports
+ * (`handlers`, `auth`, `signIn`, `signOut`) but with no real auth. Every
+ * request is treated as if the SOLO_USER_EMAIL is signed in as ADMIN.
+ *
+ * WHEN TO REMOVE: the day someone else needs an account. At that point,
+ * put the real Auth.js v5 config back with a proper provider (nodemailer
+ * with a real SMTP `server` object, or the Resend provider, or a Google
+ * OAuth provider). This file exists so the demo ships tomorrow.
+ */
 import { db } from "@/lib/db";
-import type { EmailConfig } from "next-auth/providers";
 
-const ALLOWED = (process.env.ALLOWED_EMAILS || "")
-  .split(",")
-  .map((s) => s.trim().toLowerCase())
-  .filter(Boolean);
+const SOLO_USER_EMAIL =
+  (process.env.SOLO_USER_EMAIL || process.env.ALLOWED_EMAILS?.split(",")[0] || "faiz.juma@jumia.com")
+    .trim()
+    .toLowerCase();
 
-const ResendEmailProvider: EmailConfig = {
-  id: "nodemailer",
-  type: "email",
-  name: "Email (Resend)",
-  from: process.env.EMAIL_FROM || "noreply@resend.dev",
-  maxAge: 10 * 60,
-  server: {},
-  options: {},
-  async sendVerificationRequest({ identifier, url, provider }) {
-    const apiKey = process.env.EMAIL_SERVER_PASSWORD || process.env.RESEND_API_KEY;
-    if (!apiKey) throw new Error("Resend API key missing (EMAIL_SERVER_PASSWORD)");
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
+const SOLO_USER_NAME = "Faiz Jafar";
+const SOLO_USER_ROLE = "ADMIN" as const;
+
+/**
+ * Look up (or create) the solo user in Postgres. The rest of the app expects
+ * a real user row so foreign keys (Campaign.creatorId, Knowledge.ownerId,
+ * AuditEvent.userId) resolve. We upsert once per cold start and cache the id.
+ */
+let cachedUserId: string | null = null;
+async function ensureSoloUser() {
+  if (cachedUserId) return cachedUserId;
+  try {
+    const user = await db.user.upsert({
+      where: { email: SOLO_USER_EMAIL },
+      create: {
+        email: SOLO_USER_EMAIL,
+        name: SOLO_USER_NAME,
+        role: SOLO_USER_ROLE,
+        emailVerified: new Date(),
       },
-      body: JSON.stringify({
-        from: provider.from,
-        to: identifier,
-        subject: "Sign in to JForce Engine",
-        html: `<div style="font-family:-apple-system,sans-serif;max-width:540px;margin:0 auto;padding:32px 20px;color:#0F172A;"><div style="background:linear-gradient(135deg,#ED7100 0%,#FF8C29 100%);border-radius:12px;padding:24px;text-align:center;margin-bottom:24px;"><div style="color:white;font-weight:800;font-size:24px;letter-spacing:-0.5px;">JUMIA <span style="opacity:0.85;">FORCE</span></div><div style="color:rgba(255,255,255,0.85);font-size:13px;margin-top:4px;">Faceless Reels Engine</div></div><h1 style="font-size:20px;margin-top:0;">Your sign-in link</h1><p style="line-height:1.55;color:#334155;">Click the button below to sign in. This link expires in 10 minutes and can be used only once.</p><p style="margin:28px 0;"><a href="${url}" style="display:inline-block;background:#0A2342;color:white;padding:14px 28px;border-radius:10px;text-decoration:none;font-weight:600;">Sign in to JForce</a></p><p style="color:#64748B;font-size:12px;line-height:1.55;">If the button doesn't work, copy this URL into your browser:<br/><a href="${url}" style="color:#ED7100;word-break:break-all;">${url}</a></p></div>`,
-        text: `Sign in to JForce Engine: ${url}\n\nThis link expires in 10 minutes.`,
-      }),
+      update: { role: SOLO_USER_ROLE },
     });
-    if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`Resend API ${res.status}: ${body}`);
-    }
-  },
-};
+    cachedUserId = user.id;
+    return cachedUserId;
+  } catch (e) {
+    console.error("[auth-stub] Failed to upsert solo user — DB unreachable?", e);
+    // Fall back to a stable synthetic ID so pages that only *read* the session
+    // still render. Writes that use this ID as a foreign key will still fail
+    // if the DB is truly down, but at least the /dashboard route paints.
+    cachedUserId = "solo-user";
+    return cachedUserId;
+  }
+}
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: PrismaAdapter(db),
-  session: { strategy: "jwt" },
-  pages: {
-    signIn: "/login",
-    verifyRequest: "/login?check-email=1",
-    error: "/login?error=1",
-  },
-  trustHost: true,
-  secret: process.env.AUTH_SECRET,
+/**
+ * The session shape the rest of the app expects, based on lib/auth callbacks.
+ */
+export async function auth() {
+  const id = await ensureSoloUser();
+  return {
+    user: {
+      id,
+      email: SOLO_USER_EMAIL,
+      name: SOLO_USER_NAME,
+      role: SOLO_USER_ROLE,
+    },
+    expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+  };
+}
 
-  providers: [ResendEmailProvider as any],
+/**
+ * signIn / signOut are no-ops in solo mode. The login page's form action calls
+ * signIn(...) — we redirect straight to /dashboard so the user never sees the
+ * form even if they land on /login manually.
+ */
+export async function signIn(_provider?: string, _opts?: { redirectTo?: string; email?: string }) {
+  const { redirect } = await import("next/navigation");
+  redirect(_opts?.redirectTo || "/dashboard");
+}
 
-  callbacks: {
-    async signIn({ user }) {
-      const email = (user.email || "").toLowerCase();
-      if (!ALLOWED.length) {
-        console.error("[auth] ALLOWED_EMAILS env var is empty — every sign-in will be rejected");
-        return false;
-      }
-      const ok = ALLOWED.includes(email);
-      if (!ok) console.warn(`[auth] sign-in rejected for ${email} (not in allowlist)`);
-      return ok;
-    },
-    async jwt({ token, user }) {
-      if (user) {
-        token.id = user.id;
-        token.role = (user as any).role || "EDITOR";
-      }
-      return token;
-    },
-    async session({ session, token }) {
-      if (session.user) {
-        (session.user as any).id = token.id;
-        (session.user as any).role = token.role;
-      }
-      return session;
-    },
-  },
+export async function signOut(_opts?: { redirectTo?: string }) {
+  const { redirect } = await import("next/navigation");
+  redirect(_opts?.redirectTo || "/dashboard");
+}
 
-  events: {
-    async signIn({ user }) {
-      try {
-        await db.auditEvent.create({
-          data: { userId: user.id, action: "auth.login" },
-        });
-      } catch (e) {
-        console.error("[audit] failed to record auth.login", e);
-      }
-    },
-  },
-});
+/**
+ * Auth.js normally exports `handlers = { GET, POST }` for the /api/auth
+ * catch-all route. We ship no-op handlers so that route stops 500-ing.
+ */
+async function noop() {
+  return new Response(JSON.stringify({ ok: true, mode: "solo-user-stub" }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+export const handlers = { GET: noop, POST: noop };
