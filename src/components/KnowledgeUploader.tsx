@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { upload } from "@vercel/blob/client";
 
 export default function KnowledgeUploader() {
   const [busy, setBusy] = useState(false);
@@ -8,31 +9,16 @@ export default function KnowledgeUploader() {
   const [progress, setProgress] = useState<string | null>(null);
   const router = useRouter();
 
+  // Uploads straight to Vercel Blob (bypasses Vercel's 4.5 MB body limit).
+  // /api/upload's onBeforeGenerateToken mints the client token; its
+  // onUploadCompleted webhook then records the Knowledge/AuditEvent rows —
+  // that webhook lands a moment after this resolves, not before.
   async function uploadOne(f: File) {
-    // 1. Get signed URL from our server
-    const signRes = await fetch("/api/upload", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: f.name, mime: f.type, size: f.size }),
+    await upload(f.name, f, {
+      access: "public",
+      handleUploadUrl: "/api/upload",
+      clientPayload: JSON.stringify({ size: f.size }),
     });
-    if (!signRes.ok) throw new Error(`sign: ${await signRes.text()}`);
-    const { signedUrl, path } = await signRes.json();
-
-    // 2. Upload directly to Supabase (bypasses Vercel's 4.5 MB limit)
-    const upRes = await fetch(signedUrl, {
-      method: "PUT",
-      headers: { "Content-Type": f.type, "x-upsert": "false" },
-      body: f,
-    });
-    if (!upRes.ok) throw new Error(`upload: ${upRes.status} ${await upRes.text()}`);
-
-    // 3. Tell our server the upload completed → records in DB
-    const finRes = await fetch("/api/upload", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path, name: f.name, mime: f.type, size: f.size }),
-    });
-    if (!finRes.ok) throw new Error(`finalize: ${await finRes.text()}`);
   }
 
   async function handle(files: FileList | null) {
@@ -45,6 +31,10 @@ export default function KnowledgeUploader() {
         setProgress(`Uploading ${i + 1} of ${list.length}: ${list[i].name}`);
         await uploadOne(list[i]);
       }
+      setProgress("Saving…");
+      // onUploadCompleted is an async webhook — give it a beat to land
+      // before refreshing, so the new file shows up on the first try.
+      await new Promise((r) => setTimeout(r, 1500));
       setProgress(null);
       router.refresh();
     } catch (e: any) {
