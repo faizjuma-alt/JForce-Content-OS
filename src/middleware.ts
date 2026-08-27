@@ -1,28 +1,15 @@
+/**
+ * SOLO-USER STUB — middleware is a pass-through. No auth cookie check,
+ * no /login redirect. Pairs with the stubbed lib/auth.ts.
+ *
+ * WHY: with the auth stub, every request is treated as signed-in, so
+ * there's nothing for middleware to gate. Keeping the file (rather than
+ * deleting it) preserves the ability to add real edge-level checks later
+ * (rate limits, security headers, geo blocks) without a routing change.
+ */
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PATHS = [
-  "/login",
-  "/api/auth",
-  "/api/webhook",
-  "/_next",
-  "/favicon.ico",
-];
-
-export function middleware(req: NextRequest) {
-  const { pathname } = req.nextUrl;
-  const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));
-  if (isPublic) return NextResponse.next();
-
-  const cookie =
-    req.cookies.get("authjs.session-token")?.value ??
-    req.cookies.get("__Secure-authjs.session-token")?.value;
-
-  if (!cookie) {
-    const url = req.nextUrl.clone();
-    url.pathname = "/login";
-    url.searchParams.set("from", pathname);
-    return NextResponse.redirect(url);
-  }
+export function middleware(_req: NextRequest) {
   return NextResponse.next();
 }
 
