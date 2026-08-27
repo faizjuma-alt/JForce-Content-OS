@@ -152,4 +152,4 @@ Phases: `scripts_ready` → `videos_ready` → `published` (or `partial` / `erro
 
 - `npm run db:studio` — Prisma Studio for inspecting data
 - `npm run db:migrate` — apply schema migrations to the prod DB
-- Use `ngrok http 3000` while testing webhook callbacks against your local server
+- Use `ngrok http 3000` while testing webhook callbacks against your local server 
